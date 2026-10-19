@@ -1,10 +1,15 @@
 // Pantry layout audit — crawl + measurements
 // Usage:  node scripts/audit.mjs [--sites sites.json] [--out audit-results.json]
-// Requires: npm i -D playwright  (and `npx playwright install chromium` once)
+// Requires: npm ci  (and `npx playwright install chromium` once)
 //
 // For every site: dismisses the age gate / location picker, visits the pages listed in
 // sites.json at 1440 / 768 / 390 (header also at 360 / 320) and records the same
 // measurements the Oct-2026 audit used. Output is JSON you can diff between runs.
+//
+// PANTRY_AUDIT_KEY: when set, every request carries it as the `x-pantry-audit` header so a
+// Cloudflare skip rule can let the crawl through (see README). A page that still answers 403
+// or shows the "security verification" challenge is recorded as { status, blocked: true }
+// with no measurements.
 
 import { chromium } from 'playwright'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -13,6 +18,14 @@ const args = Object.fromEntries(process.argv.slice(2).map((a, i, arr) => a.start
 const sites = JSON.parse(readFileSync(args.sites ?? new URL('./sites.json', import.meta.url), 'utf8'))
 const OUT = args.out ?? 'audit-results.json'
 const VIEWPORTS = [[1440, 900], [768, 1024], [390, 844]]
+const AUDIT_KEY = process.env.PANTRY_AUDIT_KEY
+
+// Cloudflare answers a challenged request with 403 and a "Performing security verification" page.
+const blockedRecord = async (page, resp) => {
+  const status = resp?.status() ?? null
+  const title = await page.title().catch(() => '')
+  return status === 403 || /security verification/i.test(title) ? { status, blocked: true } : null
+}
 
 const GATE = () => {
   const b = [...document.querySelectorAll('button.age-gate-btn')].find((b) => /yes/i.test(b.innerText))
@@ -64,22 +77,30 @@ const browser = await chromium.launch()
 const results = { ranAt: new Date().toISOString(), sites: {} }
 for (const site of sites) {
   const ctx = await browser.newContext()
+  if (AUDIT_KEY) await ctx.setExtraHTTPHeaders({ 'x-pantry-audit': AUDIT_KEY })
   const page = await ctx.newPage()
   results.sites[site.origin] = {}
   for (const path of site.pages) {
     const rec = {}
     for (const [w, h] of VIEWPORTS) {
       await page.setViewportSize({ width: w, height: h })
-      await page.goto(site.origin + path, { waitUntil: 'commit' })
+      let resp = await page.goto(site.origin + path, { waitUntil: 'commit' })
       await page.waitForTimeout(2500)
+      let blocked = await blockedRecord(page, resp)
+      if (blocked) { rec[w] = blocked; continue }
       await page.evaluate(GATE); await page.waitForTimeout(600)
-      if (/location-selection/.test(page.url())) { await page.evaluate(() => document.querySelector('button.lsp-common-card')?.click()); await page.waitForTimeout(1500); await page.goto(site.origin + path, { waitUntil: 'commit' }); await page.waitForTimeout(2500) }
+      if (/location-selection/.test(page.url())) {
+        await page.evaluate(() => document.querySelector('button.lsp-common-card')?.click()); await page.waitForTimeout(1500)
+        resp = await page.goto(site.origin + path, { waitUntil: 'commit' }); await page.waitForTimeout(2500)
+        blocked = await blockedRecord(page, resp)
+        if (blocked) { rec[w] = blocked; continue }
+      }
       await page.evaluate(() => scrollTo(0, document.body.scrollHeight)); await page.waitForTimeout(400); await page.evaluate(() => scrollTo(0, 0)); await page.waitForTimeout(300)
-      rec[w] = await page.evaluate(MEASURE)
+      rec[w] = { status: resp?.status() ?? null, ...(await page.evaluate(MEASURE)) }
       if (path === '/' && w === 390) for (const nw of [360, 320]) { await page.setViewportSize({ width: nw, height: 780 }); await page.waitForTimeout(400); rec[nw] = { header: (await page.evaluate(MEASURE)).header } }
     }
     results.sites[site.origin][path] = rec
-    console.log(site.origin + path, Object.fromEntries(Object.entries(rec).map(([w, r]) => [w, r.header ? `hdr ${r.header.height}px overlaps:${r.header.overlaps?.length ?? 0}` : ''])))
+    console.log(site.origin + path, Object.fromEntries(Object.entries(rec).map(([w, r]) => [w, r.blocked ? `blocked (${r.status})` : r.header ? `hdr ${r.header.height}px overlaps:${r.header.overlaps?.length ?? 0}` : ''])))
   }
   await ctx.close()
 }
