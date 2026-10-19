@@ -1,0 +1,8 @@
+[
+  { "code": "GH",  "name": "Golden Harvest",   "origin": "https://golden-harvest.ca",          "pages": ["/", "/products", "/products/category/flower", "/about", "/delivery", "/contact"] },
+  { "code": "416", "name": "416 Cannabis",     "origin": "https://416cannabis.ca",             "pages": ["/", "/products", "/products/category/pre-rolls", "/about", "/delivery", "/contact", "/faq"] },
+  { "code": "MM",  "name": "Misty Mountain",   "origin": "https://mistymountaincannabis.ca",   "pages": ["/", "/products", "/products/category/flower", "/about", "/contact"] },
+  { "code": "QC",  "name": "Queens Cannabis",  "origin": "https://queenscannabis.ca",          "pages": ["/", "/products", "/products/category/flower", "/locations", "/delivery", "/contact", "/faq", "/blog"] },
+  { "code": "GC",  "name": "Gormley Cannabis", "origin": "https://gormleycannabis.ca",         "pages": ["/", "/products", "/products/category/flower", "/loyalty", "/about", "/delivery", "/contact", "/faq"] },
+  { "code": "PW",  "name": "Prairie Weed",     "origin": "https://prairieweed.ca",             "pages": ["/", "/products", "/products/category/flower", "/mail-order", "/about", "/delivery", "/contact", "/faq"] }
+]
